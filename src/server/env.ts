@@ -18,4 +18,6 @@ export interface Env {
   ALLOWED_EMAIL: string;
   /** Optional admin key: `Authorization: Bearer <MEMORY_API_KEY>` reaches any user's /api. Empty = off. */
   MEMORY_API_KEY: string;
+  /** Write-only OTLP credential; cannot read or modify memory repositories. */
+  TELEMETRY_API_KEY: string;
 }

@@ -26,6 +26,7 @@ export const App = Cloudflare.Website.Vite("App", {
     EMAIL_FROM: Config.String("EMAIL_FROM"),
     ALLOWED_EMAIL: Config.String("ALLOWED_EMAIL"),
     MEMORY_API_KEY: Config.Redacted("MEMORY_API_KEY"),
+    TELEMETRY_API_KEY: Config.Redacted("TELEMETRY_API_KEY"),
   },
 });
 

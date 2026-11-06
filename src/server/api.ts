@@ -43,20 +43,22 @@ function memoryChanges(value: unknown): MemoryChange[] | null {
   return changes;
 }
 
-async function handleTelemetry(request: Request, env: Env, admin: boolean): Promise<Response | null> {
+async function handleTelemetry(request: Request, env: Env, admin: boolean, authorized: boolean): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/telemetry/")) return null;
-  if (!admin) return fail(401, "MEMORY_API_KEY required");
-  const agent = await getAgentByName(env.TelemetryAgent, "sleepernet");
   if (url.pathname === "/api/telemetry/recent") {
+    if (!admin) return fail(401, "MEMORY_API_KEY required");
+    const agent = await getAgentByName(env.TelemetryAgent, "sleepernet");
     const kind = url.searchParams.get("kind") ?? "metrics";
     const limit = Number(url.searchParams.get("limit") ?? "10");
     if (!["events", "logs", "traces", "metrics"].includes(kind) || !Number.isInteger(limit)) return fail(400, "invalid kind or limit");
     return json(await agent.recent(kind as "events" | "logs" | "traces" | "metrics", limit));
   }
+  if (!authorized) return fail(401, "TELEMETRY_API_KEY required");
   const match = url.pathname.match(/^\/api\/telemetry\/(?:v1\/)?(events|logs|traces|metrics)$/);
   if (!match || request.method !== "POST") return fail(404, "not found");
   const kind = match[1] as "events" | "logs" | "traces" | "metrics";
+  const agent = await getAgentByName(env.TelemetryAgent, "sleepernet");
   return json(await agent.ingest(kind, await request.json()), 202);
 }
 
@@ -64,7 +66,8 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api" || url.pathname === "/api/") return json(INDEX);
   const admin = !!env.MEMORY_API_KEY && request.headers.get("authorization") === `Bearer ${env.MEMORY_API_KEY}`;
-  const telemetry = await handleTelemetry(request, env, admin);
+  const telemetryAuthorized = !!env.TELEMETRY_API_KEY && request.headers.get("authorization") === `Bearer ${env.TELEMETRY_API_KEY}`;
+  const telemetry = await handleTelemetry(request, env, admin, telemetryAuthorized);
   if (telemetry) return telemetry;
 
   const m = url.pathname.match(/^\/api\/users\/([^/]+)(?:\/(.*))?$/);
