@@ -54,6 +54,9 @@ export class MemoryAgent extends Agent<Env, MemoryState> {
   async onStart() {
     this.sql`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
     this.sql`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL, msg_count INTEGER)`;
+    if (!this.sql<{ name: string }>`PRAGMA table_info(threads)`.some((column) => column.name === "source_metadata")) {
+      this.sql`ALTER TABLE threads ADD COLUMN source_metadata TEXT`;
+    }
     this.sql`CREATE TABLE IF NOT EXISTS cursors (thread_id TEXT PRIMARY KEY, cursor TEXT NOT NULL)`;
     this.sql`CREATE TABLE IF NOT EXISTS usage (
       at INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, model TEXT NOT NULL,
@@ -185,10 +188,16 @@ export class MemoryAgent extends Agent<Env, MemoryState> {
   }
 
   @callable()
-  async importThread(input: { id: string; title: string; messages: TranscriptMessage[]; cursor?: string }) {
+  threadMetadata(id: string): Record<string, unknown> {
+    const raw = this.sql<{ source_metadata: string | null }>`SELECT source_metadata FROM threads WHERE id = ${id}`[0]?.source_metadata;
+    return raw ? JSON.parse(raw) as Record<string, unknown> : {};
+  }
+
+  @callable()
+  async importThread(input: { id: string; title: string; messages: TranscriptMessage[]; cursor?: string; metadata?: Record<string, unknown> }) {
     const chat = await getAgentByName(this.env.ChatAgent, `${this.name}.${input.id}`);
     await chat.importTranscript(input.messages);
-    this.touchThread(input.id, input.title, input.messages.length);
+    this.touchThread(input.id, input.title, input.messages.length, input.metadata);
     if (input.cursor) {
       this.sql`INSERT INTO cursors (thread_id, cursor) VALUES (${input.id}, ${input.cursor}) ON CONFLICT(thread_id) DO UPDATE SET cursor = excluded.cursor`;
     }
@@ -196,11 +205,12 @@ export class MemoryAgent extends Agent<Env, MemoryState> {
   }
 
   /** Called by a ChatAgent at the start and end of each turn. */
-  touchThread(id: string, title: string, count: number) {
-    this.sql`INSERT INTO threads (id, title, created_at, msg_count) VALUES (${id}, ${title}, ${Date.now()}, ${count})
+  touchThread(id: string, title: string, count: number, metadata?: Record<string, unknown>) {
+    this.sql`INSERT INTO threads (id, title, created_at, msg_count, source_metadata) VALUES (${id}, ${title}, ${Date.now()}, ${count}, ${metadata ? JSON.stringify(metadata) : null})
       ON CONFLICT(id) DO UPDATE SET
         title = CASE WHEN threads.title = 'New chat' THEN excluded.title ELSE threads.title END,
-        msg_count = excluded.msg_count`;
+        msg_count = excluded.msg_count,
+        source_metadata = CASE WHEN excluded.source_metadata IS NULL THEN threads.source_metadata ELSE excluded.source_metadata END`;
   }
 
   // ---- notes ------------------------------------------------------------------------------------

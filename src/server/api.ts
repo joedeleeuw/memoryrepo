@@ -95,16 +95,18 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       case "GET threads": {
         if (!tail[0]) return json(await memory.listThreads());
         if (!THREAD.test(tail[0])) return fail(400, "bad thread id");
+        if (tail[1] === "metadata") return json(await memory.threadMetadata(tail[0]));
         const chat = await getAgentByName(env.ChatAgent, `${mem}.${tail[0]}`);
         return json(await chat.transcript());
       }
       case "PUT threads": {
         if (!tail[0] || !THREAD.test(tail[0])) return fail(400, "bad thread id");
-        const body = (await request.json().catch(() => null)) as { title?: string; messages?: unknown; cursor?: string } | null;
+        const body = (await request.json().catch(() => null)) as { title?: string; messages?: unknown; cursor?: string; metadata?: Record<string, unknown> } | null;
         const messages = importedMessages(body?.messages);
         if (!body?.title?.trim() || !messages) return fail(400, "body must include title and non-empty valid messages");
         if (body.cursor && !messages.some((message) => message.id === body.cursor)) return fail(400, "cursor must name an imported message");
-        return json(await memory.importThread({ id: tail[0], title: body.title, messages, cursor: body.cursor }));
+        if (body.metadata && (typeof body.metadata !== "object" || Array.isArray(body.metadata))) return fail(400, "metadata must be an object");
+        return json(await memory.importThread({ id: tail[0], title: body.title, messages, cursor: body.cursor, metadata: body.metadata }));
       }
       case "GET memory": {
         const path = tail.join("/");
