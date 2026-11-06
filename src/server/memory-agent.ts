@@ -524,10 +524,10 @@ export class MemoryAgent extends Agent<Env, MemoryState> {
 
   /** Search raw conversations and the wiki (files at HEAD). SQLite FTS5; indexes sync lazily. */
   @callable()
-  async search(q: string): Promise<{ hits: SearchHit[]; ms: number; indexed: { messages: number; files: number } }> {
+  async search(q: string, mode: "all" | "any" = "all"): Promise<{ hits: SearchHit[]; ms: number; indexed: { messages: number; files: number } }> {
     const t0 = Date.now();
     const words = q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-    const match = words.map((w, i) => `"${w}"${i === words.length - 1 ? "*" : ""}`).join(" ");
+    const match = words.map((w, i) => `"${w}"${i === words.length - 1 ? "*" : ""}`).join(mode === "any" ? " OR " : " ");
     if (match) await Promise.all([this.syncMessageIndex(), this.syncWikiIndex()]);
     const hits: SearchHit[] = !match
       ? []

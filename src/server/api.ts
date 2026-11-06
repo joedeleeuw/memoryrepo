@@ -128,7 +128,7 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       }
       case "GET search": {
         const q = url.searchParams.get("q");
-        return q ? json(await memory.search(q)) : fail(400, "missing ?q=");
+        return q ? json(await memory.search(q, url.searchParams.get("mode") === "any" ? "any" : "all")) : fail(400, "missing ?q=");
       }
       case "GET history":
         return json(tail[0] ? await memory.commitChanges(tail[0]) : await memory.history());
