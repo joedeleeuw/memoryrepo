@@ -54,7 +54,7 @@ async function handleTelemetry(request: Request, env: Env, admin: boolean): Prom
     if (!["events", "logs", "traces", "metrics"].includes(kind) || !Number.isInteger(limit)) return fail(400, "invalid kind or limit");
     return json(await agent.recent(kind as "events" | "logs" | "traces" | "metrics", limit));
   }
-  const match = url.pathname.match(/^\/api\/telemetry\/(events|logs|traces|metrics)$/);
+  const match = url.pathname.match(/^\/api\/telemetry\/(?:v1\/)?(events|logs|traces|metrics)$/);
   if (!match || request.method !== "POST") return fail(404, "not found");
   const kind = match[1] as "events" | "logs" | "traces" | "metrics";
   return json(await agent.ingest(kind, await request.json()), 202);
