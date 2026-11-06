@@ -13,6 +13,7 @@ export interface Env {
   EMAIL: SendEmail;
   /** Sender address for sign-in codes, on a domain with Email Sending enabled. */
   EMAIL_FROM: string;
+  ALLOWED_EMAIL: string;
   /** Optional admin key: `Authorization: Bearer <MEMORY_API_KEY>` reaches any user's /api. Empty = off. */
   MEMORY_API_KEY: string;
 }

@@ -144,6 +144,16 @@ export class ChatAgent extends AIChatAgent<Env, ChatState> {
     };
   }
 
+  async importTranscript(messages: TranscriptMessage[]): Promise<void> {
+    const imported: UIMessage[] = messages.map((message) => ({
+      id: message.id,
+      role: message.role as UIMessage["role"],
+      parts: [{ type: "text", text: message.text }],
+      metadata: { createdAt: message.at, tz: message.tz },
+    }));
+    await this.persistMessages(imported);
+  }
+
   /** Plain-text transcript, for dreaming, source checks and search. */
   transcript(): TranscriptMessage[] {
     return transcriptOf(this.messages as UIMessage[]);

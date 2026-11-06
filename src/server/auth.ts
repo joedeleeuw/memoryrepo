@@ -31,6 +31,7 @@ export async function handleAuth(request: Request, env: Env): Promise<Response> 
     const body = (await request.json().catch(() => null)) as { email?: string; code?: string } | null;
     const email = body?.email?.trim().toLowerCase() ?? "";
     if (email.length > 254 || !EMAIL.test(email)) return json({ error: "enter a valid email address" }, 400);
+    if (email !== env.ALLOWED_EMAIL) return json({ error: "sign-in is restricted" }, 403);
     const user = await userIdFor(email);
     const memory = await getAgentByName(env.MemoryAgent, user);
 

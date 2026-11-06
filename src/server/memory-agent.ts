@@ -184,6 +184,17 @@ export class MemoryAgent extends Agent<Env, MemoryState> {
     return thread;
   }
 
+  @callable()
+  async importThread(input: { id: string; title: string; messages: TranscriptMessage[]; cursor?: string }) {
+    const chat = await getAgentByName(this.env.ChatAgent, `${this.name}.${input.id}`);
+    await chat.importTranscript(input.messages);
+    this.touchThread(input.id, input.title, input.messages.length);
+    if (input.cursor) {
+      this.sql`INSERT INTO cursors (thread_id, cursor) VALUES (${input.id}, ${input.cursor}) ON CONFLICT(thread_id) DO UPDATE SET cursor = excluded.cursor`;
+    }
+    return { id: input.id, messages: input.messages.length, cursor: input.cursor ?? null };
+  }
+
   /** Called by a ChatAgent at the start and end of each turn. */
   touchThread(id: string, title: string, count: number) {
     this.sql`INSERT INTO threads (id, title, created_at, msg_count) VALUES (${id}, ${title}, ${Date.now()}, ${count})

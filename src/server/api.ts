@@ -4,33 +4,44 @@ import { sessionUser, USER } from "./auth.ts";
 import type { AskResult } from "./chat-agent.ts";
 import type { Env } from "./env.ts";
 
-/**
- * HTTP API over the same agents the UI uses. Every route is scoped to a user id:
- *
- *   POST /api/users/:user/chat                {message, thread?, tz?} → run a turn (reads + writes memory)
- *   GET  /api/users/:user/notes               → notes (markdown); POST {title, body} to create
- *   GET|PUT|DELETE /api/users/:user/notes/:id → read / update {title?, body?} / delete a note
- *   GET  /api/users/:user/threads             → threads
- *   GET  /api/users/:user/threads/:thread     → transcript
- *   GET  /api/users/:user/memory              → {head, paths}  (?ref=<commit>)
- *   GET  /api/users/:user/memory/<path>       → file content as text/markdown (?ref=<commit>)
- *   GET  /api/users/:user/search?q=           → full-text hits in conversations and memory
- *   GET  /api/users/:user/history             → commits (chat edits and dreams)
- *   GET  /api/users/:user/history/:commit     → files changed by a commit
- *   POST /api/users/:user/dream               → start a dream now
- *   GET  /api/users/:user/dream               → dreaming status, last result, live log
- *   GET  /api/users/:user/costs               → spend so far (chat, dreaming)
- *
- * Add `?bank=<name>` to work in another memory bank (default: main).
- *
- * Requests need `Authorization: Bearer <token>` with the user's session token (from POST /auth/verify,
- * or the UI's API card), or the session cookie. If MEMORY_API_KEY is set, it reaches every user.
- */
 const THREAD = /^[a-z0-9]{1,16}$/;
+const MESSAGE = /^[\w-]{1,32}$/;
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 const fail = (status: number, error: string) => json({ error }, status);
+
+type ImportedMessage = { id: string; role: string; text: string; at?: number; tz?: string };
+type MemoryChange = { path: string; content: string | null };
+
+function importedMessages(value: unknown): ImportedMessage[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const messages: ImportedMessage[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object") return null;
+    const message = candidate as Record<string, unknown>;
+    if (typeof message.id !== "string" || !MESSAGE.test(message.id)) return null;
+    if (message.role !== "user" && message.role !== "assistant" && message.role !== "system") return null;
+    if (typeof message.text !== "string") return null;
+    if (message.at !== undefined && typeof message.at !== "number") return null;
+    if (message.tz !== undefined && typeof message.tz !== "string") return null;
+    messages.push({ id: message.id, role: message.role, text: message.text, at: message.at, tz: message.tz });
+  }
+  return messages;
+}
+
+function memoryChanges(value: unknown): MemoryChange[] | null {
+  if (!Array.isArray(value)) return null;
+  const changes: MemoryChange[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object") return null;
+    const change = candidate as Record<string, unknown>;
+    if (typeof change.path !== "string" || change.path.startsWith("/") || change.path.includes("..") || change.path.includes("\\")) return null;
+    if (typeof change.content !== "string" && change.content !== null) return null;
+    changes.push({ path: change.path, content: change.content });
+  }
+  return changes;
+}
 
 export async function handleApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -87,6 +98,14 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
         const chat = await getAgentByName(env.ChatAgent, `${mem}.${tail[0]}`);
         return json(await chat.transcript());
       }
+      case "PUT threads": {
+        if (!tail[0] || !THREAD.test(tail[0])) return fail(400, "bad thread id");
+        const body = (await request.json().catch(() => null)) as { title?: string; messages?: unknown; cursor?: string } | null;
+        const messages = importedMessages(body?.messages);
+        if (!body?.title?.trim() || !messages) return fail(400, "body must include title and non-empty valid messages");
+        if (body.cursor && !messages.some((message) => message.id === body.cursor)) return fail(400, "cursor must name an imported message");
+        return json(await memory.importThread({ id: tail[0], title: body.title, messages, cursor: body.cursor }));
+      }
       case "GET memory": {
         const path = tail.join("/");
         if (!path) return json(await memory.tree(ref));
@@ -96,6 +115,16 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
         return text === null
           ? fail(404, `no such file: ${path}`)
           : new Response(text, { headers: { "content-type": "text/markdown; charset=utf-8", "x-memory-commit": head } });
+      }
+      case "PUT memory": {
+        const body = (await request.json().catch(() => null)) as { expectedHead?: string | null; changes?: unknown; message?: string } | null;
+        const changes = memoryChanges(body?.changes);
+        if ((body?.expectedHead !== null && typeof body?.expectedHead !== "string") || !changes || !body.message?.trim()) {
+          return fail(400, "body must include expectedHead, changes, and message");
+        }
+        const outcome = await memory.applyEdits(body.expectedHead, changes, body.message);
+        if (!outcome.ok) return fail(outcome.reason === "conflict" ? 409 : 500, outcome.reason);
+        return json(outcome);
       }
       case "GET search": {
         const q = url.searchParams.get("q");
@@ -120,16 +149,17 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
 const INDEX = {
   name: "markdown-memory",
   banks: "add ?bank=<name> to any route (default: main); banks are created in the UI",
-  auth: "Authorization: Bearer <token>; get one with POST /auth/start {email}, then POST /auth/verify {email, code}",
+  auth: "Authorization: Bearer <token>; get one with POST /auth/start {email}, then /auth/verify",
   routes: [
     "POST /api/users/:user/chat  {message, thread?, tz?}",
     "GET  /api/users/:user/notes",
     "POST /api/users/:user/notes  {title?, body}",
     "GET|PUT|DELETE /api/users/:user/notes/:id",
     "GET  /api/users/:user/threads",
-    "GET  /api/users/:user/threads/:thread",
+    "GET|PUT /api/users/:user/threads/:thread  {title, messages, cursor?}",
     "GET  /api/users/:user/memory  ?ref=",
     "GET  /api/users/:user/memory/<path>  ?ref=",
+    "PUT  /api/users/:user/memory  {expectedHead, changes, message}",
     "GET  /api/users/:user/search?q=",
     "GET  /api/users/:user/history",
     "GET  /api/users/:user/history/:commit",
