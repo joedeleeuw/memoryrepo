@@ -2,7 +2,7 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import type { ChatAgent, MemoryAgent } from "./src/server/index.ts";
+import type { ChatAgent, MemoryAgent, TelemetryAgent } from "./src/server/index.ts";
 
 export const Memories = Cloudflare.Artifacts.Namespace("Memories", { namespace: "sleepernet-memoryrepo" });
 
@@ -18,6 +18,7 @@ export const App = Cloudflare.Website.Vite("App", {
   env: {
     MemoryAgent: Cloudflare.DurableObject<MemoryAgent>("MemoryAgent"),
     ChatAgent: Cloudflare.DurableObject<ChatAgent>("ChatAgent"),
+    TelemetryAgent: Cloudflare.DurableObject<TelemetryAgent>("TelemetryAgent"),
     MEMORIES: Memories,
     OPENROUTER_API_KEY: Config.Redacted("OPENROUTER_API_KEY"),
     AUTH_SECRET: Config.Redacted("AUTH_SECRET"),

@@ -1,10 +1,12 @@
 import type { ChatAgent } from "./chat-agent.ts";
 import type { MemoryAgent } from "./memory-agent.ts";
+import type { TelemetryAgent } from "./telemetry-agent.ts";
 
 /** Worker bindings, as declared in alchemy.run.ts (written out to avoid a type cycle with the agents). */
 export interface Env {
   MemoryAgent: DurableObjectNamespace<MemoryAgent>;
   ChatAgent: DurableObjectNamespace<ChatAgent>;
+  TelemetryAgent: DurableObjectNamespace<TelemetryAgent>;
   MEMORIES: Artifacts;
   OPENROUTER_API_KEY: string;
   /** Signs session tokens. Any long random string; changing it signs everyone out. */

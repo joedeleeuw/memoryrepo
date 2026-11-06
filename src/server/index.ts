@@ -6,6 +6,7 @@ import type { Env } from "./env.ts";
 
 export { ChatAgent } from "./chat-agent.ts";
 export { MemoryAgent } from "./memory-agent.ts";
+export { TelemetryAgent } from "./telemetry-agent.ts";
 
 /**
  * Agent names: a memory agent is "<user>" (bank "main") or "<user>.<bank>"; a chat agent is that plus
